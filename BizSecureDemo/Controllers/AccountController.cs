@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 using BizSecureDemo.Data;
 using BizSecureDemo.Models;
 using BizSecureDemo.ViewModels;
@@ -45,9 +46,10 @@ public class AccountController : Controller
         return RedirectToAction("Login");
     }
 
-    [HttpGet]
-    public IActionResult Login() => View(new LoginVm());
+    //[HttpGet]
+    // public IActionResult Login() => View(new LoginVm());
 
+    [EnableRateLimiting("login")]
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Login(LoginVm vm)
@@ -57,12 +59,48 @@ public class AccountController : Controller
         var email = vm.Email.Trim().ToLowerInvariant();
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email);
 
-        if (user == null ||
-            _hasher.VerifyHashedPassword(user, user.PasswordHash, vm.Password) == PasswordVerificationResult.Failed)
+        //if (user == null ||
+        //    _hasher.VerifyHashedPassword(user, user.PasswordHash, vm.Password) == PasswordVerificationResult.Failed)
+        //{
+        //    ModelState.AddModelError("", "Wrong email or password.");
+        //    return View(vm);
+        //}
+
+        // Do not reveal whether user exists
+        if (user == null)
         {
             ModelState.AddModelError("", "Wrong email or password.");
             return View(vm);
         }
+
+
+        // Check lockout
+        if (user.LockoutUntilUtc != null && user.LockoutUntilUtc > DateTime.UtcNow)
+        {
+            ModelState.AddModelError("", "Account is temporarily locked. Try again later.");
+            return View(vm);
+        }
+
+
+        // Wrong password
+        if (_hasher.VerifyHashedPassword(user, user.PasswordHash, vm.Password) ==
+       PasswordVerificationResult.Failed)
+        {
+            user.FailedLogins++;
+            if (user.FailedLogins >= 5)
+            {
+                user.LockoutUntilUtc = DateTime.UtcNow.AddMinutes(5);
+                user.FailedLogins = 0;
+            }
+            await _db.SaveChangesAsync();
+            ModelState.AddModelError("", "Wrong email or password.");
+            return View(vm);
+        }
+
+        // Success → reset counters
+        user.FailedLogins = 0;
+        user.LockoutUntilUtc = null;
+        await _db.SaveChangesAsync();
 
         var claims = new List<Claim>
         {
@@ -75,6 +113,11 @@ public class AccountController : Controller
         return RedirectToAction("Index", "Home");
     }
 
+    [HttpGet]
+    public IActionResult Login() => View(new LoginVm());
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

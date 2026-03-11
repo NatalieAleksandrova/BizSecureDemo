@@ -13,9 +13,12 @@
             <div class="d-flex gap-2">
                 @if (User.Identity?.IsAuthenticated ?? false)
                 {
-                    <a class="btn btn-outline-light btn-sm" asp-controller="Home" asp-action="Index">Landing</a>
-                    <a class="btn btn-outline-light btn-sm" asp-controller="Account" asp-action="Logout">Logout</a>
-                }
+                   <a class="btn btn-outline-light btn-sm" asp-controller="Home" aspaction="Index">Landing</a>
+ <form asp-controller="Account" asp-action="Logout" method="post" class="dinline">
+ @Html.AntiForgeryToken()
+ <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
+ </form>
+ }
                 else
                 {
                     <a class="btn btn-outline-light btn-sm" asp-controller="Account" asp-action="Login">Login</a>
